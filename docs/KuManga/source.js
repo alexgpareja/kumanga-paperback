@@ -902,8 +902,8 @@ var _Sources = (() => {
     }
     // ── getHomePageSections ────────────────────────────────────────────────
     async getHomePageSections(sectionCallback) {
-      const latest = App.createHomeSection({ id: "latest", title: "\u{1F525} \xDAltimas actualizaciones", type: import_types.HomeSectionType.singleRowNormal, containsMoreItems: true });
-      const popular = App.createHomeSection({ id: "popular", title: "\u{1F4C8} Populares", type: import_types.HomeSectionType.singleRowLarge, containsMoreItems: true });
+      const latest = App.createHomeSection({ id: "latest", title: "\u{1F552} \xDAltimas actualizaciones", type: import_types.HomeSectionType.singleRowNormal, containsMoreItems: true });
+      const popular = App.createHomeSection({ id: "popular", title: "\u2B50\uFE0F Populares", type: import_types.HomeSectionType.singleRowLarge, containsMoreItems: true });
       sectionCallback(latest);
       sectionCallback(popular);
       const resp = await this.requestManager.schedule(
@@ -936,11 +936,9 @@ var _Sources = (() => {
       const page = metadata?.page ?? 1;
       const term = (query.title ?? "").trim();
       const genres = query.includedTags?.map((t) => t.id) ?? [];
-      const params = new URLSearchParams();
-      if (term) params.set("keywords", term);
-      if (genres[0]) params.set("genero", genres[0]);
-      params.set("page", String(page));
-      const url = `${BASE_URL}/mangalist?${params.toString()}`;
+      let url = `${BASE_URL}/mangalist?page=${page}`;
+      if (term) url += `&keywords=${encodeURIComponent(term)}`;
+      if (genres[0]) url += `&genero=${encodeURIComponent(genres[0])}`;
       const resp = await this.requestManager.schedule(
         App.createRequest({ url, method: "GET" }),
         2
