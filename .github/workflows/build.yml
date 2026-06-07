@@ -14,13 +14,8 @@ jobs:
           node-version: '16'
       - run: npm install
       - run: npx paperback bundle
-      - run: |
-          rm -rf docs
-          mv bundles docs
-          sed -i '/^docs/d' .gitignore
-      - run: |
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git add docs/ .gitignore
-          git diff --staged --quiet || git commit -m "Auto-build docs [skip ci]"
-          git push
+      - uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./bundles
+          force_orphan: true
