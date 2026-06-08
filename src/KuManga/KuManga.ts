@@ -9,15 +9,16 @@ import {
     Request,
     Response,
     SearchRequest,
+    SourceInfo,
+    SourceIntents,
     SourceManga,
     TagSection,
     HomePageSectionsProviding,
     MangaProviding,
     ChapterProviding,
     SearchResultsProviding,
+    BadgeColor,
 } from '@paperback/types'
-
-import * as cheerio from 'cheerio'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Metadata
@@ -25,8 +26,8 @@ import * as cheerio from 'cheerio'
 
 const BASE_URL = 'https://www.kumanga.com'
 
-export const KuMangaInfo = {
-    version:        '1.0.2',
+export const KuMangaInfo: SourceInfo = {
+    version:        '1.0.3',
     name:           'KuManga',
     icon:           'icon.png',
     author:         'alexgpareja',
@@ -34,7 +35,12 @@ export const KuMangaInfo = {
     contentRating:  ContentRating.MATURE,
     websiteBaseURL: BASE_URL,
     language:       'es',
-    intents:        21, // MANGA_CHAPTERS(1) | HOMEPAGE_SECTIONS(4) | CLOUDFLARE_BYPASS_REQUIRED(16)
+    sourceTags: [
+        { text: 'Español', type: BadgeColor.GREY },
+    ],
+    intents: SourceIntents.MANGA_CHAPTERS
+           | SourceIntents.HOMEPAGE_SECTIONS
+           | SourceIntents.CLOUDFLARE_BYPASS_REQUIRED,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -44,35 +50,6 @@ export const KuMangaInfo = {
 function hexDecode(hex: string): string {
     const bytes = hex.match(/.{2}/g) ?? []
     return bytes.map(b => String.fromCharCode(parseInt(b, 16))).join('')
-}
-
-function extractPageUrls($: cheerio.CheerioAPI): string[] {
-    const pages: string[] = []
-    const seen = new Set<string>()
-
-    $('img.lozad, img[data-src*="img.php"]').each((_: number, el: cheerio.Element) => {
-        const dataSrc = $(el).attr('data-src') ?? ''
-        const hex = dataSrc.split('img.php?src=')[1]?.split('&')[0] ?? ''
-        if (!hex) return
-        const url = hexDecode(hex)
-        if (url.startsWith('http') && !seen.has(url)) {
-            seen.add(url)
-            pages.push(url)
-        }
-    })
-
-    if (pages.length === 0) {
-        const html = $.html()
-        for (const m of html.matchAll(/img\.php\?src=([0-9A-Fa-f]{20,})/g)) {
-            const url = hexDecode(m[1]!)
-            if (url.startsWith('http') && !seen.has(url)) {
-                seen.add(url)
-                pages.push(url)
-            }
-        }
-    }
-
-    return pages
 }
 
 function parseMangaUrl(url: string): { id: string; slug: string } | null {
@@ -93,54 +70,17 @@ function parseStatus(t: string): string {
     return 'Unknown'
 }
 
-function hasNextPage($: cheerio.CheerioAPI, currentPage: number): boolean {
-    const text = $('body').text()
-    const m = text.match(/Mostrando\s+p[áa]gina\s+(\d+)\s+de\s+(\d+)/i)
-    if (m) return parseInt(m[2]!) > currentPage
-    return $('a, button').toArray().some((el: cheerio.Element) => {
-        const t = $(el).text().trim().toLowerCase()
-        return t === 'siguiente' || t === '»' || t === 'next'
-    })
-}
-
-function parseMangaTiles($: cheerio.CheerioAPI): PartialSourceManga[] {
-    const tiles: PartialSourceManga[] = []
-    const seen = new Set<string>()
-
-    $('li.km-li-crd').each((_: number, el: cheerio.Element) => {
-        const onclick = $(el).attr('onclick') ?? ''
-        const urlMatch = onclick.match(/window\.open\(['"]([^'"]+)['"]\)/)
-        if (!urlMatch) return
-
-        const parsed = parseMangaUrl(urlMatch[1]!)
-        if (!parsed) return
-
-        const { id, slug } = parsed
-        const mangaId = buildMangaId(id, slug)
-        if (seen.has(mangaId)) return
-        seen.add(mangaId)
-
-        const imgEl = $(el).find('img.km-img-crd').first()
-        const image = imgEl.attr('src') || `https://static.kumanga.com/manga/6/${id}.jpg`
-
-        let title = imgEl.attr('alt') ?? ''
-        if (!title) title = $(el).find('.km-title-p-card').first().text().trim()
-        if (!title) title = slug.replace(/-/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())
-
-        tiles.push(App.createPartialSourceManga({ mangaId, image, title }))
-    })
-
-    return tiles
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
-// Extensión — implementa interfaces directamente (patrón 0.8 correcto)
+// Extensión — patrón correcto 0.8: implements + constructor(private cheerio)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export class KuManga implements SearchResultsProviding, MangaProviding, ChapterProviding, HomePageSectionsProviding {
 
-    // RequestManager con interceptor que añade headers correctos en CADA request
-    // incluyendo el User-Agent real de Paperback — crítico para Cloudflare
+    // Paperback inyecta el cheerio al instanciar la clase
+    constructor(private cheerio: CheerioAPI) {}
+
+    RETRIES = 3
+
     requestManager = App.createRequestManager({
         requestsPerSecond: 3,
         requestTimeout: 20000,
@@ -150,7 +90,6 @@ export class KuManga implements SearchResultsProviding, MangaProviding, ChapterP
                     ...request.headers,
                     'user-agent': await this.requestManager.getDefaultUserAgent(),
                     'referer':    `${BASE_URL}/`,
-                    'origin':     BASE_URL,
                 }
                 return request
             },
@@ -160,7 +99,6 @@ export class KuManga implements SearchResultsProviding, MangaProviding, ChapterP
         }
     })
 
-    // Cloudflare bypass con headers correctos
     async getCloudflareBypassRequestAsync(): Promise<Request> {
         return App.createRequest({
             url:    BASE_URL,
@@ -173,17 +111,6 @@ export class KuManga implements SearchResultsProviding, MangaProviding, ChapterP
         })
     }
 
-    // Lanza error específico en 403/503 para re-triggerear el bypass si expira
-    checkResponseError(response: Response): void {
-        switch (response.status) {
-            case 403:
-            case 503:
-                throw new Error(`CLOUDFLARE BYPASS ERROR:\nPlease go to the homepage of <${BASE_URL}> and press the cloud icon.`)
-            case 404:
-                throw new Error(`Page not found: ${response.request.url}`)
-        }
-    }
-
     // ── getMangaDetails ────────────────────────────────────────────────────
 
     async getMangaDetails(mangaId: string): Promise<SourceManga> {
@@ -191,10 +118,9 @@ export class KuManga implements SearchResultsProviding, MangaProviding, ChapterP
         const slug  = getSlug(mangaId)
 
         const response = await this.requestManager.schedule(
-            App.createRequest({ url: `${BASE_URL}/manga/${numId}/${slug}`, method: 'GET' }), 1
+            App.createRequest({ url: `${BASE_URL}/manga/${numId}/${slug}`, method: 'GET' }), this.RETRIES
         )
-        this.checkResponseError(response)
-        const $ = cheerio.load(response.data as string)
+        const $ = this.cheerio.load(response.data)
 
         const title = $('h1').first().text().trim() || slug.replace(/-/g, ' ')
         const image = $('meta[property="og:image"]').attr('content')
@@ -209,7 +135,7 @@ export class KuManga implements SearchResultsProviding, MangaProviding, ChapterP
 
         const tagItems: ReturnType<typeof App.createTag>[] = []
         const seenTags = new Set<string>()
-        $('a[href*="/genero/"]').each((_: number, el: cheerio.Element) => {
+        $('a[href*="/genero/"]').each((_: number, el: Element) => {
             const href  = $(el).attr('href') ?? ''
             const m     = href.match(/\/genero\/([^/?#]+)/)
             if (!m) return
@@ -237,19 +163,18 @@ export class KuManga implements SearchResultsProviding, MangaProviding, ChapterP
         const slug  = getSlug(mangaId)
 
         const response = await this.requestManager.schedule(
-            App.createRequest({ url: `${BASE_URL}/manga/${numId}/${slug}`, method: 'GET' }), 1
+            App.createRequest({ url: `${BASE_URL}/manga/${numId}/${slug}`, method: 'GET' }), this.RETRIES
         )
-        this.checkResponseError(response)
-        const $ = cheerio.load(response.data as string)
+        const $ = this.cheerio.load(response.data)
 
         const chapters: Chapter[] = []
         const seen = new Set<string>()
 
-        $('a[href*="/capitulo/"]').each((_: number, el: cheerio.Element) => {
+        $('a[href*="/capitulo/"]').each((_: number, el: Element) => {
             const href = $(el).attr('href') ?? ''
             const m    = href.match(/\/capitulo\/(\d+(?:\.\d+)?)/)
             if (!m) return
-            const chapId  = m[1]!
+            const chapId = m[1]!
             if (seen.has(chapId)) return
             seen.add(chapId)
             chapters.push(App.createChapter({
@@ -267,12 +192,41 @@ export class KuManga implements SearchResultsProviding, MangaProviding, ChapterP
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
         const numId = getNumericId(mangaId)
+
         const response = await this.requestManager.schedule(
-            App.createRequest({ url: `${BASE_URL}/manga/${numId}/capitulo/${chapterId}`, method: 'GET' }), 1
+            App.createRequest({
+                url:    `${BASE_URL}/manga/${numId}/capitulo/${chapterId}`,
+                method: 'GET',
+            }), this.RETRIES
         )
-        this.checkResponseError(response)
-        const $ = cheerio.load(response.data as string)
-        const pages = extractPageUrls($)
+        const $ = this.cheerio.load(response.data)
+
+        const pages: string[] = []
+        const seen = new Set<string>()
+
+        // Imágenes con data-src="/img.php?src=HEX" → decodificar hex → URL CDN
+        $('img.lozad, img[data-src*="img.php"]').each((_: number, el: Element) => {
+            const dataSrc = $(el).attr('data-src') ?? ''
+            const hex = dataSrc.split('img.php?src=')[1]?.split('&')[0] ?? ''
+            if (!hex) return
+            const url = hexDecode(hex)
+            if (url.startsWith('http') && !seen.has(url)) {
+                seen.add(url)
+                pages.push(url)
+            }
+        })
+
+        // Fallback: buscar en el HTML raw
+        if (pages.length === 0) {
+            for (const m of ($.html()).matchAll(/img\.php\?src=([0-9A-Fa-f]{20,})/g)) {
+                const url = hexDecode(m[1]!)
+                if (url.startsWith('http') && !seen.has(url)) {
+                    seen.add(url)
+                    pages.push(url)
+                }
+            }
+        }
+
         return App.createChapterDetails({ id: chapterId, mangaId, pages })
     }
 
@@ -285,54 +239,51 @@ export class KuManga implements SearchResultsProviding, MangaProviding, ChapterP
         sectionCallback(latest)
         sectionCallback(popular)
 
-        const promises = [
-            this.requestManager.schedule(App.createRequest({ url: `${BASE_URL}/mangalist?page=1`, method: 'GET' }), 1)
-                .then(resp => {
-                    this.checkResponseError(resp)
-                    const $ = cheerio.load(resp.data as string)
-                    const tiles = parseMangaTiles($)
-                    latest.items  = tiles.slice(0, 15)
-                    popular.items = tiles.slice(15, 30)
-                    sectionCallback(latest)
-                    sectionCallback(popular)
-                })
-        ]
+        const response = await this.requestManager.schedule(
+            App.createRequest({ url: `${BASE_URL}/mangalist?page=1`, method: 'GET' }), this.RETRIES
+        )
+        const $ = this.cheerio.load(response.data)
+        const tiles = this.parseMangaTiles($)
 
-        await Promise.all(promises)
+        latest.items  = tiles.slice(0, 15)
+        popular.items = tiles.slice(15, 30)
+
+        sectionCallback(latest)
+        sectionCallback(popular)
     }
 
-    async getViewMoreItems(sectionId: string, metadata: { page?: number }): Promise<PagedResults> {
+    async getViewMoreItems(_sectionId: string, metadata: any): Promise<PagedResults> {
         const page = metadata?.page ?? 1
         const response = await this.requestManager.schedule(
-            App.createRequest({ url: `${BASE_URL}/mangalist?page=${page}`, method: 'GET' }), 1
+            App.createRequest({ url: `${BASE_URL}/mangalist?page=${page}`, method: 'GET' }), this.RETRIES
         )
-        this.checkResponseError(response)
-        const $ = cheerio.load(response.data as string)
+        const $ = this.cheerio.load(response.data)
         return App.createPagedResults({
-            results:  parseMangaTiles($),
-            metadata: hasNextPage($, page) ? { page: page + 1 } : undefined,
+            results:  this.parseMangaTiles($),
+            metadata: { page: page + 1 },
         })
     }
 
     // ── getSearchResults ───────────────────────────────────────────────────
 
-    async getSearchResults(query: SearchRequest, metadata: { page?: number }): Promise<PagedResults> {
+    async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
         const page   = metadata?.page ?? 1
         const term   = (query.title ?? '').trim()
-        const genres = query.includedTags?.map(t => t.id) ?? []
+        const genres = query.includedTags?.map((t: any) => t.id) ?? []
 
         let url = `${BASE_URL}/mangalist?page=${page}`
         if (term)      url += `&keywords=${encodeURIComponent(term)}`
-        if (genres[0]) url += `&genero=${encodeURIComponent(genres[0]!)}`
+        if (genres[0]) url += `&genero=${encodeURIComponent(genres[0])}`
 
         const response = await this.requestManager.schedule(
-            App.createRequest({ url, method: 'GET' }), 1
+            App.createRequest({ url, method: 'GET' }), this.RETRIES
         )
-        this.checkResponseError(response)
-        const $ = cheerio.load(response.data as string)
+        const $ = this.cheerio.load(response.data)
+        const manga = this.parseMangaTiles($)
+
         return App.createPagedResults({
-            results:  parseMangaTiles($),
-            metadata: hasNextPage($, page) ? { page: page + 1 } : undefined,
+            results:  manga,
+            metadata: manga.length > 0 ? { page: page + 1 } : undefined,
         })
     }
 
@@ -340,21 +291,52 @@ export class KuManga implements SearchResultsProviding, MangaProviding, ChapterP
 
     async getSearchTags(): Promise<TagSection[]> {
         const genres: [string, string][] = [
-            ['accion','Acción'],['artes+marciales','Artes marciales'],['aventura','Aventura'],
-            ['boys+love','Boys Love'],['ciencia+ficcion','Ciencia Ficción'],['comedia','Comedia'],
-            ['deportes','Deportes'],['drama','Drama'],['ecchi','Ecchi'],['fantasia','Fantasía'],
-            ['gender+bender','Gender Bender'],['girls+love','Girls Love'],['gore','Gore'],
-            ['harem','Harem'],['historico','Histórico'],['horror','Horror'],['isekai','Isekai'],
-            ['josei','Josei'],['magia','Magia'],['misterio','Misterio'],['psicologico','Psicológico'],
-            ['recuentos+de+la+vida','Recuentos de la vida'],['reencarnacion','Reencarnación'],
-            ['romance','Romance'],['seinen','Seinen'],['shoujo','Shoujo'],['shounen','Shounen'],
-            ['sobrenatural','Sobrenatural'],['supervivencia','Supervivencia'],['terror','Terror'],
-            ['tragedia','Tragedia'],['vida+escolar','Vida escolar'],
+            ['accion','Acción'], ['artes-marciales','Artes marciales'], ['aventura','Aventura'],
+            ['boys-love','Boys Love'], ['ciencia-ficcion','Ciencia Ficción'], ['comedia','Comedia'],
+            ['deportes','Deportes'], ['drama','Drama'], ['ecchi','Ecchi'], ['fantasia','Fantasía'],
+            ['gender-bender','Gender Bender'], ['girls-love','Girls Love'], ['gore','Gore'],
+            ['harem','Harem'], ['historico','Histórico'], ['horror','Horror'], ['isekai','Isekai'],
+            ['josei','Josei'], ['magia','Magia'], ['misterio','Misterio'], ['psicologico','Psicológico'],
+            ['recuentos-de-la-vida','Recuentos de la vida'], ['reencarnacion','Reencarnación'],
+            ['romance','Romance'], ['seinen','Seinen'], ['shoujo','Shoujo'], ['shounen','Shounen'],
+            ['sobrenatural','Sobrenatural'], ['terror','Terror'], ['tragedia','Tragedia'],
         ]
         return [App.createTagSection({
             id:    'genres',
             label: 'Géneros',
             tags:  genres.map(([id, label]) => App.createTag({ id, label })),
         })]
+    }
+
+    // ── Parser de tiles ────────────────────────────────────────────────────
+
+    parseMangaTiles($: CheerioAPI): PartialSourceManga[] {
+        const tiles: PartialSourceManga[] = []
+        const seen = new Set<string>()
+
+        $('li.km-li-crd').each((_: number, el: Element) => {
+            const onclick = $(el).attr('onclick') ?? ''
+            const urlMatch = onclick.match(/window\.open\(['"]([^'"]+)['"]\)/)
+            if (!urlMatch) return
+
+            const parsed = parseMangaUrl(urlMatch[1]!)
+            if (!parsed) return
+
+            const { id, slug } = parsed
+            const mangaId = buildMangaId(id, slug)
+            if (seen.has(mangaId)) return
+            seen.add(mangaId)
+
+            const imgEl = $(el).find('img.km-img-crd').first()
+            const image = imgEl.attr('src') || `https://static.kumanga.com/manga/6/${id}.jpg`
+
+            let title = imgEl.attr('alt') ?? ''
+            if (!title) title = $(el).find('.km-title-p-card').first().text().trim()
+            if (!title) title = slug.replace(/-/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())
+
+            tiles.push(App.createPartialSourceManga({ mangaId, image, title }))
+        })
+
+        return tiles
     }
 }
