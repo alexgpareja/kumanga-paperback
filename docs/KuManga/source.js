@@ -15631,8 +15631,8 @@ Please go to the homepage of <${BASE_URL}> and press the cloud icon.`);
     }
     // ── getHomePageSections ────────────────────────────────────────────────
     async getHomePageSections(sectionCallback) {
-      const latest = App.createHomeSection({ id: "latest", title: "\u{1F552} \xDAltimas actualizaciones", type: import_types2.HomeSectionType.singleRowNormal, containsMoreItems: true });
-      const popular = App.createHomeSection({ id: "popular", title: "\u2B50\uFE0F Populares", type: import_types2.HomeSectionType.singleRowLarge, containsMoreItems: true });
+      const latest = App.createHomeSection({ id: "latest", title: "\u{1F525} \xDAltimas actualizaciones", type: import_types2.HomeSectionType.singleRowNormal, containsMoreItems: true });
+      const popular = App.createHomeSection({ id: "popular", title: "\u{1F4C8} Populares", type: import_types2.HomeSectionType.singleRowLarge, containsMoreItems: true });
       sectionCallback(latest);
       sectionCallback(popular);
       const promises = [

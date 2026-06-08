@@ -26,15 +26,15 @@ import * as cheerio from 'cheerio'
 const BASE_URL = 'https://www.kumanga.com'
 
 export const KuMangaInfo = {
-    version: '1.0.2',
-    name: 'KuManga',
-    icon: 'icon.png',
-    author: 'alexgpareja',
-    description: 'KuManga — Manga, Manhwa y Manhua en Español',
-    contentRating: ContentRating.MATURE,
+    version:        '1.0.2',
+    name:           'KuManga',
+    icon:           'icon.png',
+    author:         'alexgpareja',
+    description:    'KuManga — Manga, Manhwa y Manhua en Español',
+    contentRating:  ContentRating.MATURE,
     websiteBaseURL: BASE_URL,
-    language: 'es',
-    intents: 21, // MANGA_CHAPTERS(1) | HOMEPAGE_SECTIONS(4) | CLOUDFLARE_BYPASS_REQUIRED(16)
+    language:       'es',
+    intents:        21, // MANGA_CHAPTERS(1) | HOMEPAGE_SECTIONS(4) | CLOUDFLARE_BYPASS_REQUIRED(16)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -149,8 +149,8 @@ export class KuManga implements SearchResultsProviding, MangaProviding, ChapterP
                 request.headers = {
                     ...request.headers,
                     'user-agent': await this.requestManager.getDefaultUserAgent(),
-                    'referer': `${BASE_URL}/`,
-                    'origin': BASE_URL,
+                    'referer':    `${BASE_URL}/`,
+                    'origin':     BASE_URL,
                 }
                 return request
             },
@@ -163,11 +163,11 @@ export class KuManga implements SearchResultsProviding, MangaProviding, ChapterP
     // Cloudflare bypass con headers correctos
     async getCloudflareBypassRequestAsync(): Promise<Request> {
         return App.createRequest({
-            url: BASE_URL,
+            url:    BASE_URL,
             method: 'GET',
             headers: {
-                'referer': `${BASE_URL}/`,
-                'origin': BASE_URL,
+                'referer':    `${BASE_URL}/`,
+                'origin':     BASE_URL,
                 'user-agent': await this.requestManager.getDefaultUserAgent(),
             }
         })
@@ -188,7 +188,7 @@ export class KuManga implements SearchResultsProviding, MangaProviding, ChapterP
 
     async getMangaDetails(mangaId: string): Promise<SourceManga> {
         const numId = getNumericId(mangaId)
-        const slug = getSlug(mangaId)
+        const slug  = getSlug(mangaId)
 
         const response = await this.requestManager.schedule(
             App.createRequest({ url: `${BASE_URL}/manga/${numId}/${slug}`, method: 'GET' }), 1
@@ -210,10 +210,10 @@ export class KuManga implements SearchResultsProviding, MangaProviding, ChapterP
         const tagItems: ReturnType<typeof App.createTag>[] = []
         const seenTags = new Set<string>()
         $('a[href*="/genero/"]').each((_: number, el: cheerio.Element) => {
-            const href = $(el).attr('href') ?? ''
-            const m = href.match(/\/genero\/([^/?#]+)/)
+            const href  = $(el).attr('href') ?? ''
+            const m     = href.match(/\/genero\/([^/?#]+)/)
             if (!m) return
-            const id = decodeURIComponent(m[1]!).toLowerCase()
+            const id    = decodeURIComponent(m[1]!).toLowerCase()
             const label = $(el).text().trim()
             if (!label || seenTags.has(id)) return
             seenTags.add(id)
@@ -234,7 +234,7 @@ export class KuManga implements SearchResultsProviding, MangaProviding, ChapterP
 
     async getChapters(mangaId: string): Promise<Chapter[]> {
         const numId = getNumericId(mangaId)
-        const slug = getSlug(mangaId)
+        const slug  = getSlug(mangaId)
 
         const response = await this.requestManager.schedule(
             App.createRequest({ url: `${BASE_URL}/manga/${numId}/${slug}`, method: 'GET' }), 1
@@ -247,15 +247,15 @@ export class KuManga implements SearchResultsProviding, MangaProviding, ChapterP
 
         $('a[href*="/capitulo/"]').each((_: number, el: cheerio.Element) => {
             const href = $(el).attr('href') ?? ''
-            const m = href.match(/\/capitulo\/(\d+(?:\.\d+)?)/)
+            const m    = href.match(/\/capitulo\/(\d+(?:\.\d+)?)/)
             if (!m) return
-            const chapId = m[1]!
+            const chapId  = m[1]!
             if (seen.has(chapId)) return
             seen.add(chapId)
             chapters.push(App.createChapter({
-                id: chapId,
-                chapNum: parseFloat(chapId),
-                name: `Capítulo ${chapId}`,
+                id:       chapId,
+                chapNum:  parseFloat(chapId),
+                name:     `Capítulo ${chapId}`,
                 langCode: 'es',
             }))
         })
@@ -279,8 +279,8 @@ export class KuManga implements SearchResultsProviding, MangaProviding, ChapterP
     // ── getHomePageSections ────────────────────────────────────────────────
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
-        const latest = App.createHomeSection({ id: 'latest', title: '🕒 Últimas actualizaciones', type: HomeSectionType.singleRowNormal, containsMoreItems: true })
-        const popular = App.createHomeSection({ id: 'popular', title: '⭐️ Populares', type: HomeSectionType.singleRowLarge, containsMoreItems: true })
+        const latest  = App.createHomeSection({ id: 'latest',  title: '🔥 Últimas actualizaciones', type: HomeSectionType.singleRowNormal, containsMoreItems: true })
+        const popular = App.createHomeSection({ id: 'popular', title: '📈 Populares',               type: HomeSectionType.singleRowLarge,  containsMoreItems: true })
 
         sectionCallback(latest)
         sectionCallback(popular)
@@ -291,7 +291,7 @@ export class KuManga implements SearchResultsProviding, MangaProviding, ChapterP
                     this.checkResponseError(resp)
                     const $ = cheerio.load(resp.data as string)
                     const tiles = parseMangaTiles($)
-                    latest.items = tiles.slice(0, 15)
+                    latest.items  = tiles.slice(0, 15)
                     popular.items = tiles.slice(15, 30)
                     sectionCallback(latest)
                     sectionCallback(popular)
@@ -309,7 +309,7 @@ export class KuManga implements SearchResultsProviding, MangaProviding, ChapterP
         this.checkResponseError(response)
         const $ = cheerio.load(response.data as string)
         return App.createPagedResults({
-            results: parseMangaTiles($),
+            results:  parseMangaTiles($),
             metadata: hasNextPage($, page) ? { page: page + 1 } : undefined,
         })
     }
@@ -317,12 +317,12 @@ export class KuManga implements SearchResultsProviding, MangaProviding, ChapterP
     // ── getSearchResults ───────────────────────────────────────────────────
 
     async getSearchResults(query: SearchRequest, metadata: { page?: number }): Promise<PagedResults> {
-        const page = metadata?.page ?? 1
-        const term = (query.title ?? '').trim()
+        const page   = metadata?.page ?? 1
+        const term   = (query.title ?? '').trim()
         const genres = query.includedTags?.map(t => t.id) ?? []
 
         let url = `${BASE_URL}/mangalist?page=${page}`
-        if (term) url += `&keywords=${encodeURIComponent(term)}`
+        if (term)      url += `&keywords=${encodeURIComponent(term)}`
         if (genres[0]) url += `&genero=${encodeURIComponent(genres[0]!)}`
 
         const response = await this.requestManager.schedule(
@@ -331,7 +331,7 @@ export class KuManga implements SearchResultsProviding, MangaProviding, ChapterP
         this.checkResponseError(response)
         const $ = cheerio.load(response.data as string)
         return App.createPagedResults({
-            results: parseMangaTiles($),
+            results:  parseMangaTiles($),
             metadata: hasNextPage($, page) ? { page: page + 1 } : undefined,
         })
     }
@@ -340,21 +340,21 @@ export class KuManga implements SearchResultsProviding, MangaProviding, ChapterP
 
     async getSearchTags(): Promise<TagSection[]> {
         const genres: [string, string][] = [
-            ['accion', 'Acción'], ['artes+marciales', 'Artes marciales'], ['aventura', 'Aventura'],
-            ['boys+love', 'Boys Love'], ['ciencia+ficcion', 'Ciencia Ficción'], ['comedia', 'Comedia'],
-            ['deportes', 'Deportes'], ['drama', 'Drama'], ['ecchi', 'Ecchi'], ['fantasia', 'Fantasía'],
-            ['gender+bender', 'Gender Bender'], ['girls+love', 'Girls Love'], ['gore', 'Gore'],
-            ['harem', 'Harem'], ['historico', 'Histórico'], ['horror', 'Horror'], ['isekai', 'Isekai'],
-            ['josei', 'Josei'], ['magia', 'Magia'], ['misterio', 'Misterio'], ['psicologico', 'Psicológico'],
-            ['recuentos+de+la+vida', 'Recuentos de la vida'], ['reencarnacion', 'Reencarnación'],
-            ['romance', 'Romance'], ['seinen', 'Seinen'], ['shoujo', 'Shoujo'], ['shounen', 'Shounen'],
-            ['sobrenatural', 'Sobrenatural'], ['supervivencia', 'Supervivencia'], ['terror', 'Terror'],
-            ['tragedia', 'Tragedia'], ['vida+escolar', 'Vida escolar'],
+            ['accion','Acción'],['artes+marciales','Artes marciales'],['aventura','Aventura'],
+            ['boys+love','Boys Love'],['ciencia+ficcion','Ciencia Ficción'],['comedia','Comedia'],
+            ['deportes','Deportes'],['drama','Drama'],['ecchi','Ecchi'],['fantasia','Fantasía'],
+            ['gender+bender','Gender Bender'],['girls+love','Girls Love'],['gore','Gore'],
+            ['harem','Harem'],['historico','Histórico'],['horror','Horror'],['isekai','Isekai'],
+            ['josei','Josei'],['magia','Magia'],['misterio','Misterio'],['psicologico','Psicológico'],
+            ['recuentos+de+la+vida','Recuentos de la vida'],['reencarnacion','Reencarnación'],
+            ['romance','Romance'],['seinen','Seinen'],['shoujo','Shoujo'],['shounen','Shounen'],
+            ['sobrenatural','Sobrenatural'],['supervivencia','Supervivencia'],['terror','Terror'],
+            ['tragedia','Tragedia'],['vida+escolar','Vida escolar'],
         ]
         return [App.createTagSection({
-            id: 'genres',
+            id:    'genres',
             label: 'Géneros',
-            tags: genres.map(([id, label]) => App.createTag({ id, label })),
+            tags:  genres.map(([id, label]) => App.createTag({ id, label })),
         })]
     }
 }
