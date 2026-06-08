@@ -730,7 +730,7 @@ var _Sources = (() => {
   var import_types = __toESM(require_lib());
   var BASE_URL = "https://www.kumanga.com";
   var KuMangaInfo = {
-    version: "1.0.3",
+    version: "1.0.5",
     name: "KuManga",
     icon: "icon.png",
     author: "alexgpareja",
@@ -769,53 +769,43 @@ var _Sources = (() => {
     return "Unknown";
   }
   var KuManga = class {
-    // Paperback inyecta el cheerio al instanciar la clase
     constructor(cheerio) {
       this.cheerio = cheerio;
-      this.RETRIES = 3;
+      this.baseUrl = BASE_URL;
+      this.RETRIES = 10;
       this.requestManager = App.createRequestManager({
         requestsPerSecond: 3,
-        requestTimeout: 2e4,
-        interceptor: {
-          interceptRequest: async (request) => {
-            request.headers = {
-              ...request.headers,
-              "user-agent": await this.requestManager.getDefaultUserAgent(),
-              "referer": `${BASE_URL}/`
-            };
-            return request;
-          },
-          interceptResponse: async (response) => {
-            return response;
-          }
-        }
+        requestTimeout: 2e4
       });
+    }
+    getMangaShareUrl(mangaId) {
+      const numId = getNumericId(mangaId);
+      const slug = getSlug(mangaId);
+      return `${this.baseUrl}/manga/${numId}/${slug}`;
     }
     async getCloudflareBypassRequestAsync() {
       return App.createRequest({
-        url: BASE_URL,
+        url: this.baseUrl,
         method: "GET",
         headers: {
-          "referer": `${BASE_URL}/`,
-          "origin": BASE_URL,
+          "referer": `${this.baseUrl}/`,
+          "origin": this.baseUrl,
           "user-agent": await this.requestManager.getDefaultUserAgent()
         }
       });
     }
     // ── getMangaDetails ────────────────────────────────────────────────────
     async getMangaDetails(mangaId) {
-      const numId = getNumericId(mangaId);
-      const slug = getSlug(mangaId);
-      const response = await this.requestManager.schedule(
-        App.createRequest({ url: `${BASE_URL}/manga/${numId}/${slug}`, method: "GET" }),
-        this.RETRIES
-      );
+      const request = App.createRequest({
+        url: `${this.baseUrl}/manga/${getNumericId(mangaId)}/${getSlug(mangaId)}`,
+        method: "GET"
+      });
+      const response = await this.requestManager.schedule(request, this.RETRIES);
       const $ = this.cheerio.load(response.data);
-      const title = $("h1").first().text().trim() || slug.replace(/-/g, " ");
-      const image = $('meta[property="og:image"]').attr("content") || `https://static.kumanga.com/manga/6/${numId}.jpg`;
+      const title = $("h1").first().text().trim() || getSlug(mangaId).replace(/-/g, " ");
+      const image = $('meta[property="og:image"]').attr("content") || `https://static.kumanga.com/manga/6/${getNumericId(mangaId)}.jpg`;
       const desc = $('meta[name="description"]').attr("content") || $('meta[property="og:description"]').attr("content") || "";
-      const bodyText = $("body").text();
-      const statusMatch = bodyText.match(/\b(Activo|Finalizado|Inconcluso|En emisión|En pausa)\b/);
+      const statusMatch = $("body").text().match(/\b(Activo|Finalizado|Inconcluso|En emisión|En pausa)\b/);
       const status = statusMatch ? parseStatus(statusMatch[1]) : "Unknown";
       const tagItems = [];
       const seenTags = /* @__PURE__ */ new Set();
@@ -837,12 +827,11 @@ var _Sources = (() => {
     }
     // ── getChapters ────────────────────────────────────────────────────────
     async getChapters(mangaId) {
-      const numId = getNumericId(mangaId);
-      const slug = getSlug(mangaId);
-      const response = await this.requestManager.schedule(
-        App.createRequest({ url: `${BASE_URL}/manga/${numId}/${slug}`, method: "GET" }),
-        this.RETRIES
-      );
+      const request = App.createRequest({
+        url: `${this.baseUrl}/manga/${getNumericId(mangaId)}/${getSlug(mangaId)}`,
+        method: "GET"
+      });
+      const response = await this.requestManager.schedule(request, this.RETRIES);
       const $ = this.cheerio.load(response.data);
       const chapters = [];
       const seen = /* @__PURE__ */ new Set();
@@ -864,14 +853,11 @@ var _Sources = (() => {
     }
     // ── getChapterDetails ──────────────────────────────────────────────────
     async getChapterDetails(mangaId, chapterId) {
-      const numId = getNumericId(mangaId);
-      const response = await this.requestManager.schedule(
-        App.createRequest({
-          url: `${BASE_URL}/manga/${numId}/capitulo/${chapterId}`,
-          method: "GET"
-        }),
-        this.RETRIES
-      );
+      const request = App.createRequest({
+        url: `${this.baseUrl}/manga/${getNumericId(mangaId)}/capitulo/${chapterId}`,
+        method: "GET"
+      });
+      const response = await this.requestManager.schedule(request, this.RETRIES);
       const $ = this.cheerio.load(response.data);
       const pages = [];
       const seen = /* @__PURE__ */ new Set();
@@ -896,55 +882,7 @@ var _Sources = (() => {
       }
       return App.createChapterDetails({ id: chapterId, mangaId, pages });
     }
-    // ── getHomePageSections ────────────────────────────────────────────────
-    async getHomePageSections(sectionCallback) {
-      const latest = App.createHomeSection({ id: "latest", title: "\u{1F525} \xDAltimas actualizaciones", type: import_types.HomeSectionType.singleRowNormal, containsMoreItems: true });
-      const popular = App.createHomeSection({ id: "popular", title: "\u{1F4C8} Populares", type: import_types.HomeSectionType.singleRowLarge, containsMoreItems: true });
-      sectionCallback(latest);
-      sectionCallback(popular);
-      const response = await this.requestManager.schedule(
-        App.createRequest({ url: `${BASE_URL}/mangalist?page=1`, method: "GET" }),
-        this.RETRIES
-      );
-      const $ = this.cheerio.load(response.data);
-      const tiles = this.parseMangaTiles($);
-      latest.items = tiles.slice(0, 15);
-      popular.items = tiles.slice(15, 30);
-      sectionCallback(latest);
-      sectionCallback(popular);
-    }
-    async getViewMoreItems(_sectionId, metadata) {
-      const page = metadata?.page ?? 1;
-      const response = await this.requestManager.schedule(
-        App.createRequest({ url: `${BASE_URL}/mangalist?page=${page}`, method: "GET" }),
-        this.RETRIES
-      );
-      const $ = this.cheerio.load(response.data);
-      return App.createPagedResults({
-        results: this.parseMangaTiles($),
-        metadata: { page: page + 1 }
-      });
-    }
-    // ── getSearchResults ───────────────────────────────────────────────────
-    async getSearchResults(query, metadata) {
-      const page = metadata?.page ?? 1;
-      const term = (query.title ?? "").trim();
-      const genres = query.includedTags?.map((t) => t.id) ?? [];
-      let url = `${BASE_URL}/mangalist?page=${page}`;
-      if (term) url += `&keywords=${encodeURIComponent(term)}`;
-      if (genres[0]) url += `&genero=${encodeURIComponent(genres[0])}`;
-      const response = await this.requestManager.schedule(
-        App.createRequest({ url, method: "GET" }),
-        this.RETRIES
-      );
-      const $ = this.cheerio.load(response.data);
-      const manga = this.parseMangaTiles($);
-      return App.createPagedResults({
-        results: manga,
-        metadata: manga.length > 0 ? { page: page + 1 } : void 0
-      });
-    }
-    // ── getSearchTags ──────────────────────────────────────────────────────
+    // ── getSearchTags ────────────────────────────────────────────────────────────
     async getSearchTags() {
       const genres = [
         ["accion", "Acci\xF3n"],
@@ -983,6 +921,49 @@ var _Sources = (() => {
         label: "G\xE9neros",
         tags: genres.map(([id, label]) => App.createTag({ id, label }))
       })];
+    }
+    // ── getSearchResults ───────────────────────────────────────────────────
+    async getSearchResults(query, metadata) {
+      const page = metadata?.page ?? 1;
+      const term = (query.title ?? "").trim();
+      const genres = query.includedTags?.map((t) => t.id) ?? [];
+      let url = `${this.baseUrl}/mangalist?page=${page}`;
+      if (term) url += `&keywords=${encodeURIComponent(term)}`;
+      if (genres[0]) url += `&genero=${encodeURIComponent(genres[0])}`;
+      const request = App.createRequest({ url, method: "GET" });
+      const response = await this.requestManager.schedule(request, this.RETRIES);
+      const $ = this.cheerio.load(response.data);
+      const manga = this.parseMangaTiles($);
+      return App.createPagedResults({
+        results: manga,
+        metadata: manga.length > 0 ? { page: page + 1 } : void 0
+      });
+    }
+    // ── getHomePageSections ────────────────────────────────────────────────
+    async getHomePageSections(sectionCallback) {
+      const latest = App.createHomeSection({ id: "latest", title: "\u{1F552} \xDAltimas actualizaciones", type: import_types.HomeSectionType.singleRowNormal, containsMoreItems: true });
+      const popular = App.createHomeSection({ id: "popular", title: "\u2B50\uFE0F Populares", type: import_types.HomeSectionType.singleRowLarge, containsMoreItems: true });
+      sectionCallback(latest);
+      sectionCallback(popular);
+      const request = App.createRequest({ url: `${this.baseUrl}/mangalist?page=1`, method: "GET" });
+      const response = await this.requestManager.schedule(request, this.RETRIES);
+      const $ = this.cheerio.load(response.data);
+      const tiles = this.parseMangaTiles($);
+      latest.items = tiles.slice(0, 15);
+      popular.items = tiles.slice(15, 30);
+      sectionCallback(latest);
+      sectionCallback(popular);
+    }
+    // ── getViewMoreItems ───────────────────────────────────────────────────
+    async getViewMoreItems(_, metadata) {
+      const page = metadata?.page ?? 1;
+      const request = App.createRequest({ url: `${this.baseUrl}/mangalist?page=${page}`, method: "GET" });
+      const response = await this.requestManager.schedule(request, this.RETRIES);
+      const $ = this.cheerio.load(response.data);
+      return App.createPagedResults({
+        results: this.parseMangaTiles($),
+        metadata: { page: page + 1 }
+      });
     }
     // ── Parser de tiles ────────────────────────────────────────────────────
     parseMangaTiles($) {
